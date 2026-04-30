@@ -1,0 +1,23 @@
+[project]
+name = "pentest-copilot-host"
+version = "0.1.0"
+description = "Минимальный локальный хост ассистента для пентеста (Kali / CLI)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12.0",
+    "httpx>=0.27.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+pentest-copilot = "pentest_copilot.cli:main"
+copilot = "pentest_copilot.cli:copilot_main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
