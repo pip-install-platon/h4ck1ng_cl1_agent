@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Поднять локально HTML-макет split-terminal (откроется в браузере).
+"""Поднять локально HTML-макет текущего UX copilot (без git).
 
-Запуск из корня репозитория:
+Файл: mock/cursor_terminals_mock.html — можно открыть двойным кликом в браузере
+или через сервер:
 
   python mock/serve_mock.py
 
-Нажми Enter в консоли, чтобы остановить сервер.
+Макет подписан блоками «что реально в host.py / prompt_menus.py». Enter — стоп сервера.
 """
 
 from __future__ import annotations
