@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Лаунчер: venv → проверка зависимостей (динамический спиннер в Python) → copilot chat / doctor / …
+# PATH: export PATH="/path/to/h4ck1ng_app/bin:$PATH"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PENTEST_COPILOT_ROOT="$ROOT"
+
+VENV="${ROOT}/.venv"
+PY="${VENV}/bin/python"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Нужен python3 в PATH (>= 3.11)." >&2
+  exit 1
+fi
+
+if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>/dev/null; then
+  echo "Нужен Python >= 3.11 (сейчас: $(python3 -V 2>&1))." >&2
+  exit 1
+fi
+
+if [[ ! -x "$PY" ]]; then
+  echo "[copilot] создание .venv…"
+  python3 -m venv "$VENV"
+fi
+
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec "$PY" -m pentest_copilot.preflight "$@"

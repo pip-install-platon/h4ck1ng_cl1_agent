@@ -1,112 +1,298 @@
 # pentest-copilot-host
 
-Минимальный **CLI-хост** ассистента под пентест: контекст машины (Kali и др.), заготовка методологии в `knowledge/`, опционально — LLM через **OpenRouter**.
+Интерактивный **CLI-хост** для пентеста из терминала (в т.ч. Kali): русскоязычный чат с моделью, подстановка контекста (скоуп, методология из `knowledge/`, memory, jobs, tmux), выполнение предложенных **`bash`** только после подтверждения (или в режиме trust), опционально **справка по пакетам Kali** и **методология/CVE** через **MCP** (stdio). Без Electron.
 
-Никакого Electron: тестируйте на **VM Kali** в обычном терминале.
+## Что внутри
 
-## Установка на Kali
+| Часть | Роль |
+|-------|------|
+| **REPL** | Ввод текста → запрос к LLM; блоки `bash` → подтверждение и запуск через хост (`task`, `trust`, `manual`, …). |
+| **Скоуп** | `PENTEST_SCOPE_*` и команды `target` / `policy` → текст в каждый пользовательский промпт (не ACL и не sandbox). |
+| **Методология** | Файл `knowledge/tactics_stub.md` или `COPILOT_KNOWLEDGE_PATH`; команда `knowledge` показывает полный фрагмент. |
+| **Файл скана** | `COPILOT_SCOPE_FACTS_FILE` — подстановка в промпт сводки + эвристический разбор IP / строк портов / фрагментов OS (см. ниже). |
+| **MCP Kali** | Документация инструментов Kali (`ktools` в REPL; при `COPILOT_KALI_TOOLS_LLM=1` — как LLM tools). |
+| **MCP security-framework** | При `COPILOT_SECURITY_FRAMEWORK_LLM=1` — OWASP/WSTG/CVE/CWE и др. (whitelist tools). |
+| **Артефакты** | Каталог сессии `~/.pentest-copilot/sessions/<id>/`: транскрипт, todo, jobs, `tool_trace.jsonl`, scope. |
+
+Несколько хостов в одном задании: поле **target** — одна строка произвольного текста; можно перечислить несколько IP/CIDR/имён через запятую или с переносами. Для тяжёлого вывода сканера удобнее **файл** (`COPILOT_SCOPE_FACTS_FILE`): там и сырой хвост, и авто-выжимка портов/OS.
+
+## Требования
+
+| Компонент | Минимум |
+|-----------|---------|
+| Python | **3.11+** |
+| LLM | Ключ и совместимый HTTP API (по умолчанию OpenRouter) или `--dry-run` |
+| ktools | Docker + образ [kali-mcp](https://github.com/evilbotnet/kali-mcp), extras **`[kali-tools-mcp]`** |
+
+## Установка и запуск
+
+### Вариант A — лаунчер из репозитория
+
+Подходит для ежедневного запуска одной командой **`copilot`** (venv и зависимости подтягиваются при необходимости):
 
 ```bash
-cd pentest-copilot-host   # корень этого репозитория
+chmod +x bin/copilot
+export PATH="/absolute/path/to/h4ck1ng_app/bin:$PATH"   # лучше добавить в ~/.bashrc
+
+copilot                    # интерактивный чат
+copilot doctor
+copilot --dry-run
+```
+
+См. **`src/pentest_copilot/preflight.py`** (спиннер при первом `pip install -e`).
+
+### Вариант B — классический venv
+
+```bash
+cd /path/to/h4ck1ng_app
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[kali-tools-mcp]"
+
+copilot chat
+pentest-copilot chat
 ```
 
-## Скоуп (контекст для модели)
-
-`PENTEST_SCOPE_TARGET` и `PENTEST_SCOPE_POLICY` — это **текст**, который подмешивается в каждый запрос к LLM: какая цель и какие ограничения. Это **не** песочница и **не** технический запрет на команды — только явная подсказка модели и тебе. Чтобы напомнить себе смысл переменных и увидеть текущие значения, в REPL есть команда **`scope`**.
+### Вариант C — скрипт с git pull
 
 ```bash
-export PENTEST_SCOPE_TARGET="10.10.x.x   # ваша лабораторная цель"
-export PENTEST_SCOPE_POLICY="только учебный стенд X; без выхода за подсеть"
+chmod +x scripts/copilot-up.sh
+./scripts/copilot-up.sh              # pull + venv + pip + copilot
+./scripts/copilot-up.sh --no-pull --dry-run
 ```
 
-## LLM / OpenRouter
+## LLM: не только OpenRouter
 
-Ключ берётся на [openrouter.ai/keys](https://openrouter.ai/keys). Задай переменные окружения **или** файл **`.env`** в каталоге запуска (подхватывается автоматически через `python-dotenv`).
+Клиент ходит в **`POST {OPENROUTER_BASE_URL}/chat/completions`** в формате **OpenAI Chat Completions** (`messages`, опционально `tools`). Имена переменных исторические (`OPENROUTER_*`), но подставить можно любой **OpenAI-совместимый** endpoint:
+
+| Провайдер / режим | Пример `OPENROUTER_BASE_URL` |
+|-------------------|------------------------------|
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| OpenAI | `https://api.openai.com/v1` |
+| LM Studio | `http://127.0.0.1:1234/v1` |
+| Ollama (режим совместимости) | часто `http://127.0.0.1:11434/v1` |
+| Локальный vLLM / др. | URL до суффикса `/v1` у вашего сервера |
+
+- **`OPENROUTER_API_KEY`** — заголовок `Authorization: Bearer …`. Для локального сервера без ключа иногда достаточно произвольной строки — зависит от сервера.
+- **`OPENROUTER_MODEL`** — идентификатор модели в том виде, как его ждёт ваш API.
+
+Дополнительно:
+
+| Переменная | Назначение |
+|------------|------------|
+| **`COPILOT_OPENAI_COMPAT_MODE=1`** | Убрать заголовки `HTTP-Referer` и `X-Title` (некоторые прокси/шлюзы их режут или не любят). |
+| **`COPILOT_LLM_EXTRA_HEADERS_JSON`** | JSON-объект с дополнительными заголовками, например `{"api-key":"…"}` для кастомных шлюзов. |
+
+**`copilot doctor`** делает лёгкий **`GET …/models`**. У части локальных серверов этого маршрута нет (**404**) — тогда `doctor` всё равно может завершиться успехом с пояснением; финальная проверка — короткий запрос в REPL.
+
+## Скоуп и файл результатов скана
+
+| Переменная | Назначение |
+|------------|------------|
+| **`PENTEST_SCOPE_TARGET`** | Текст цели(ей): один хост, несколько IP, CIDR, заметки — одна строка или многострочное значение в env. |
+| **`PENTEST_SCOPE_POLICY`** | Политика / ограничения в свободной форме. |
+| **`COPILOT_SCOPE_FACTS_FILE`** | Путь к файлу (относительно cwd допустим): вывод nmap -oG / обычный stdout / фрагмент XML и т.д. В промпт попадают: список IPv4 (в т.ч. из строк `Host:` grepable), строки вида `22/tcp open ssh`, фрагменты строк с подсказками OS, затем **сырой хвост** файла (объём режется лимитами). |
+| **`COPILOT_SCOPE_FACTS_MAX_BYTES`** | Сколько байт читать с начала файла (по умолчанию **524288**). |
+| **`COPILOT_SCOPE_FACTS_PROMPT_CHARS`** | Верхняя граница размера блока в промпте (по умолчанию **12000**). |
+
+Разбор **эвристический**: точные версии сервисов и ОС модель должна читать из сырого хвоста; IPv6 сейчас не извлекаются отдельным списком.
+
+В REPL команды **`target`** / **`policy`** переопределяют env для текущей сессии (`scope_chat.json`).
+
+## Конфигурация (общая)
+
+Скопируй **`.env.example`** → **`.env`** в каталоге запуска или экспортируй переменные.
+
+### API и модель
+
+| Переменная | Назначение |
+|------------|------------|
+| `OPENROUTER_API_KEY` | Токен Bearer для выбранного API |
+| `OPENROUTER_BASE_URL` | База URL (**без** `/chat/completions` — суффикс добавляется кодом) |
+| `OPENROUTER_MODEL` | Имя модели для провайдера |
+
+### Методология и промпт
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_KNOWLEDGE_PATH` | Свой markdown вместо `knowledge/tactics_stub.md` |
+| `COPILOT_TACTICS_MAX` | Лимит символов при загрузке stub в память (дефолт **12000**) |
+| `COPILOT_TACTICS_PROMPT_MODE` | `full` \| `minimal` — объём методологии в user-блоке; при security-LLM без режима по умолчанию короче |
+
+### Транскрипт и LLM-история
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_TRANSCRIPT_FULL_FOR_LLM` | Полная история в модель (1/true) |
+| `COPILOT_LLM_MSG_CAP` | Лимит символов сообщений (дефолт **7200**) |
+| `COPILOT_LLM_ASSISTANT_CAP` | Отдельный лимит для ответов ассистента (если задан) |
+| `COPILOT_JOBS_VERBOSE_LLM` | Расширенное описание jobs в промпте |
+
+### Memory
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_MEMORY_MAX_CHARS` | Лимит блока memory в промпте |
+
+### Терминал, trust, вывод команд
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_TERMINAL_MODE` | `embed` \| `window` — окно ОС только с `COPILOT_ALLOW_EXTERNAL_TERMINAL=1` |
+| `COPILOT_ALLOW_EXTERNAL_TERMINAL` | Разрешить отдельное окно |
+| `COPILOT_FG_MODE` | `stream` \| `tty` \| `classic` — вывод «здесь» |
+| `COPILOT_TRUST_FG` | Режим fg для trust, если `FG_MODE` пуст |
+| `COPILOT_TRUST_BACKGROUND` | Фоновые процессы в trust |
+| `COPILOT_TRUST_STDIN_PIPE` | stdin-слот для фона в trust |
+| `COPILOT_TRUST_FLOW` | Старт с trust как после `trust on` |
+| `COPILOT_TERMINAL_EMULATOR` | Внешний эмулятор терминала (spawn) |
+| `COPILOT_CMD_TIMEOUT` | Таймаут команд (сек) |
+
+### Стрим и превью
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_STREAM_MODE` | `chunk` \| `line` |
+| `COPILOT_STREAM_CHUNK_BYTES` | Размер чанка |
+| `COPILOT_STREAM_REFRESH_HZ` | Частота обновления |
+| `COPILOT_STREAM_PREVIEW_LINES` | Строк превью |
+| `COPILOT_BG_PREVIEW` | Превью stdout фона |
+| `COPILOT_BG_PREVIEW_LINES` | Строк превью фона |
+| `COPILOT_BG_PREVIEW_BYTES` | Байт чтения хвоста лога |
+| `COPILOT_RESULT_COLUMNS` | Две колонки «команда \| хвост» |
+
+### UI REPL
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_MENU_HOTKEYS` | Горячие клавиши выбора bash-блока |
+| `COPILOT_STICKY_BANNER` | Липкий баннер |
+| `COPILOT_STICKY_TAIL` | Хвост строк в липком режиме |
+| `COPILOT_STICKY_CLEAR` | Очистка перед промптом |
+| `COPILOT_SCROLLBACK_LINES` | Размер скроллбека |
+
+### tmux
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_TMUX_CAPTURE` | Включить снимок панели |
+| `COPILOT_TMUX_LINES` | Число строк |
+| `COPILOT_TMUX_TARGET` | Цель tmux |
+
+### Task-агент
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_AGENT_MAX_STEPS` | Максимум шагов в `task …` |
+
+### MCP Kali (ktools)
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_KALI_MCP_AUTO` | Авто Docker (дефолт **1**) |
+| `COPILOT_KALI_MCP_DOCKER_IMAGE` | Образ |
+| `COPILOT_KALI_MCP_DOCKER_PLATFORM` | `--platform` |
+| `COPILOT_KALI_MCP_DOCKER_RUN_ARGS` | Доп. аргументы `docker run` |
+| `COPILOT_KALI_TOOLS_MCP_CMD` | JSON argv — полная замена команды stdio |
+| `COPILOT_KALI_TOOLS_TIMEOUT` | Таймаут вызова tool |
+| `COPILOT_KALI_TOOLS_ONE_SHOT` | Новый subprocess на каждый вызов |
+| `COPILOT_KALI_MCP_BOOT_TIMEOUT` | Ожидание при старте |
+| `COPILOT_KALI_MCP_PING_TIMEOUT` | Таймаут `list_tools` при boot |
+| `COPILOT_KALI_TOOLS_LLM` | Включить Kali tools как LLM function calling |
+| `COPILOT_KALI_TOOLS_LLM_MAX_ROUNDS` | Лимит раундов tool_calls (если нет `COPILOT_LLM_TOOL_ROUNDS`) |
+
+### MCP security-framework
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_SECURITY_FRAMEWORK_LLM` | Подмешать security tools |
+| `COPILOT_SECURITY_FRAMEWORK_MCP_CMD` | JSON argv stdio |
+| `COPILOT_SECURITY_MCP_AUTO` | Искать `security-framework-mcp` в PATH (дефолт выкл.) |
+| `COPILOT_SECURITY_TOOLS_ALLOWLIST` | Имена через запятую |
+| `COPILOT_SECURITY_MCP_BOOT_TIMEOUT` | Boot-intro |
+| `COPILOT_SECURITY_MCP_PING_TIMEOUT` | Ping/list при старте |
+| `COPILOT_SECURITY_MCP_LIST_TOOLS_TIMEOUT` | Таймаут `list_tools` при загрузке схем |
+| `COPILOT_SECURITY_MCP_TOOL_TIMEOUT` | Таймаут вызова (иначе как Kali timeout) |
+| `COPILOT_SECURITY_TOOLS_ONE_SHOT` | Без долгой сессии |
+
+### LLM tool rounds и журнал
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_LLM_TOOL_ROUNDS` | Лимит раундов tool_calls (приоритет над Kali-переменной) |
+| `COPILOT_TOOL_TRACE_IN_PROMPT` | Подмешивать хвост `tool_trace.jsonl` в промпт |
+
+### Прочее
+
+| Переменная | Назначение |
+|------------|------------|
+| `COPILOT_BOOT_INTRO` | Цветное интро при старте (**0** — выкл.) |
+| `COPILOT_BOOT_INTRO_HZ` | Частота кадров интро |
+| `COPILOT_PREFLIGHT_NO_MCP` | Preflight без MCP extra |
+| `PENTEST_COPILOT_ROOT` | Корень проекта для preflight |
+
+Проверка ключа без генерации:
 
 ```bash
-cp .env.example .env
-# отредактируй .env — минимум OPENROUTER_API_KEY
-```
-
-Либо в shell:
-
-```bash
-export OPENROUTER_API_KEY="sk-or-..."
-export OPENROUTER_MODEL="google/gemini-2.5-flash"
-# или
-export OPENROUTER_MODEL="openai/gpt-4o-mini"
-# необязательно, уже совпадает с OpenRouter:
-# export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-```
-
-Проверка ключа **без расхода на генерацию** (запрос `GET …/models`):
-
-```bash
-pentest-copilot doctor
 copilot doctor
 ```
 
-Без ключа или с `copilot chat --dry-run` сеть к chat completions не вызывается — только сбор контекста.
+## Docker: образ для ktools
 
-## Запуск
-
-После `pip install -e .` доступны **`copilot`** и **`pentest-copilot`**:
+Один раз:
 
 ```bash
-copilot chat
-pentest-copilot chat
-python -m pentest_copilot chat
-
-# без LLM (показать собираемый промпт):
-copilot chat --dry-run
-
-# по умолчанию предлагать внешнее окно терминала для bash-блоков (Kali/Linux):
-copilot chat --terminal-window
-# то же через env:
-export COPILOT_TERMINAL_MODE=window   # embed | window
-# свой эмулятор (опционально): строка argv для Popen, затем bash и скрипт
-# export COPILOT_TERMINAL_EMULATOR='gnome-terminal --'
+docker build -t kali-tools-mcp-server:latest https://github.com/evilbotnet/kali-mcp.git#main
 ```
 
-Внутри сессии при старте показывается баннер (**HACK THE PLANET** / `forced by AI`) и краткая карточка сессии.
+При ошибке платформы — сборка из клона репозитория или **`COPILOT_KALI_MCP_DOCKER_PLATFORM`**.
 
-- Обычный **русский текст** — мультитёрн диалог; в каждый запрос подмешиваются скоуп, **Todo**, **jobs** (что уже запускалось / в фоне / завершилось), актуальный **context** (hostname, cwd, при SSH — `SSH_CONNECTION`), фрагмент `knowledge/tactics_stub.md`.
-- Блоки **` ```bash` ** → при нескольких блоках подряд выбираешь номер (**[1]…[n]**, **[0]**, **[a]** все по очереди); затем одно подтверждение **«Запустить здесь?»** (Enter/да — да). Запуск всегда в текущем терминале; режим вывода задаёт **`COPILOT_FG_MODE`**=stream|tty|classic (по умолчанию стрим-превью). Фон, окно ОС и stdin-слот — только при **`trust on`** и переменных **`COPILOT_TRUST_*`** (см. **`help`** в REPL).
-- **`jobs`** — таблица задач сессии; то же самое в сжатом виде уходит в промпт к LLM.
-- **`todo add …`** · **`todo list`** · **`todo done <id>`** — состояние в `~/.pentest-copilot/sessions/<id>/todos.json`.
-- **`trust on`** / **`trust off`** или **`COPILOT_TRUST_FLOW=1`** — выполнять предложенные команды без запроса подтверждения; режим окна при **`COPILOT_TERMINAL_MODE=window`** и **`COPILOT_ALLOW_EXTERNAL_TERMINAL=1`**. Для фона в trust-сессии: **`export COPILOT_TRUST_BACKGROUND=1`**; stdin-слот: **`COPILOT_TRUST_STDIN_PIPE=1`**.
-- **`ktools`** — справка по каталогу Kali через MCP ([evilbotnet/kali-mcp](https://github.com/evilbotnet/kali-mcp)): **`pip install '.[kali-tools-mcp]'`**, **`COPILOT_KALI_TOOLS_MCP_CMD`** (JSON argv, часто `docker run --rm -i …`). Подкоманды REPL: `search`, `usage`, `details`, … При **`COPILOT_KALI_TOOLS_LLM=1`** те же пять вызовов доступны модели как **LLM tools** (function calling на OpenRouter — нужна поддерживающая модель); лимит раундов **`COPILOT_KALI_TOOLS_LLM_MAX_ROUNDS`** (по умолчанию 8). Пока задан MCP_CMD, клиент держит **одну долгоживущую stdio-сессию** (переподъём на каждый вызов — **`COPILOT_KALI_TOOLS_ONE_SHOT=1`**). При старте показывается короткое цветное интро (выкл. **`COPILOT_BOOT_INTRO=0`**); частота **`COPILOT_BOOT_INTRO_HZ`**. Журнал вызовов MCP — **`logs/tool_trace.jsonl`** в каталоге сессии; в REPL **`tooltrace`**; подмешивание хвоста в промпт — **`COPILOT_TOOL_TRACE_IN_PROMPT`** (по умолчанию включено). Ожидание MCP при буте: **`COPILOT_KALI_MCP_BOOT_TIMEOUT`** (сек).
-- **`scope`** · **`context`** · **`knowledge`** · **`ktools`** · **`tooltrace`** · **`help`** · **`exit`**.
+Поведение по умолчанию: **`COPILOT_KALI_MCP_AUTO=1`** собирает `docker run …` (**`COPILOT_KALI_MCP_DOCKER_IMAGE`**). Своя команда stdio: **`COPILOT_KALI_TOOLS_MCP_CMD`** (JSON argv). Подробнее — **`help`** в REPL.
 
-История: **`~/.pentest-copilot/sessions/<id>/transcript.jsonl`**, учёт команд — **`jobs.json`** рядом.
+### Опционально: security-framework-mcp (LLM tools)
 
-**SSH:** если ты зашёл по SSH, в блок окружения попадает `SSH_CONNECTION` / при наличии `SSH_TTY` — удобно, когда copilot запущен в той же сессии на сервере.
+Установка сервера (отдельный пакет): [zer0-kr/security-framework-mcp](https://github.com/zer0-kr/security-framework-mcp).
 
-**Чужие терминалы:** вывод из режима stream/classic «здесь» и хвосты логов фона по **`jobs`**; произвольные другие PTY/tmux — отдельная задача.
+```bash
+pip install git+https://github.com/zer0-kr/security-framework-mcp.git
+```
 
-## Референс OpenClaw (локально)
+При старте Kali и security MCP поднимаются **параллельно**. Полный текст методологии при включённом security-LLM по умолчанию короче в промпте; полный файл — **`knowledge`** (`COPILOT_TACTICS_PROMPT_MODE=full|minimal`).
 
-Рядом лежит клон/распаковка **[OpenClaw](https://github.com/openclaw/openclaw)**:
+#### Риски
 
-`openclaw-main/` — у тебя полный путь:  
-`C:\Users\0\PROJECTS\h4ck1ng_app\openclaw-main`
+- Whitelist может не совпасть с именами конкретной версии сервера — смотрите предупреждения в логе при старте.
+- Security MCP может тянуть БД и сеть (NVD и др.) — изоляция данных на стороне оператора.
+- Совокупный размер схем tools увеличивает расход токенов; при необходимости сокращайте allowlist.
 
-Это **отдельный продукт** (Node ≥22): шлюз (**gateway**), куча каналов (Telegram, Slack, …), **`openclaw agent`**, скиллы/плагины, onboarding. Наш `pentest-copilot` — намеренно **узкий Python CLI** без шлюза и мессенджеров.
+## Каталог `knowledge/`
 
-| OpenClaw | Этот репозиторий (`pentest-copilot`) |
-|----------|--------------------------------------|
-| `openclaw agent --message "..."` | `copilot chat` — диалог в терминале |
-| Gateway, каналы, daemon | не используем на MVP |
-| Skills / plugins (расширения) | **ktools** + MCP docs ([kali-mcp](https://github.com/evilbotnet/kali-mcp)); GraphRAG по `knowledge/` |
-| Workspace, модели, OAuth | у нас: **OpenRouter** через env + явный скоуп |
+| Файл | Роль |
+|------|------|
+| **`tactics_stub.md`** | Фрагмент в промпт + команда **`knowledge`** в REPL |
 
-Имеет смысл смотреть OpenClaw как образец **оркестрации агента и политик**, а пентест-специфику держать у нас (скоуп, tactic stub → граф, вызов MCP для команд).
+Описание расширения и **`COPILOT_KNOWLEDGE_PATH`**: **`knowledge/README.md`**.
 
-## Дальше
+## Артефакты сессии
 
-- **GraphRAG**: заменить плоский stub на граф тактик + retrieval.
-- **MCP**: отдельный сервер «формулировка команды», этот хост дергает его как клиент.
-- **Захват UI**: позже — только под явным разрешением и политикой.
+База каталогов: **`~/.pentest-copilot/sessions/<id>/`**
+
+| Файл | Содержимое |
+|------|------------|
+| `transcript.jsonl` | Диалог |
+| `jobs.json` | Задачи / процессы |
+| `todos.json` | Todo |
+| `logs/tool_trace.jsonl` | Вызовы MCP (команда **`tooltrace`**) |
+| `scope_chat.json` | Переопределение target/policy из REPL |
+
+## Поведение в REPL (кратко)
+
+- Текст на русском → ответ модели; блоки **` ```bash` **` → подтверждение и запуск через хост.
+- **`trust on`** — без запросов на bash (осторожно).
+- **`task …`**, **`manual …`**, **`scope`**, **`context`**, **`ktools`**, **`tooltrace`**, **`help`**, **`exit`** — см. **`help`**.
+
+Флаги CLI: **`copilot chat --dry-run`**, **`--terminal-window`** (внешнее окно для команд при Linux).
+
+## Отличие от OpenClaw
+
+[OpenClaw](https://github.com/openclaw/openclaw) — отдельный стек (gateway, каналы, Node). Этот репозиторий — узкий Python CLI: терминал, скоуп, ktools/MCP, методология из файлов.
