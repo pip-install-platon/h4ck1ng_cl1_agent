@@ -35,6 +35,8 @@ cp .env.example .env
 
 ```bash
 export OPENROUTER_API_KEY="sk-or-..."
+export OPENROUTER_MODEL="google/gemini-2.5-flash"
+# или
 export OPENROUTER_MODEL="openai/gpt-4o-mini"
 # необязательно, уже совпадает с OpenRouter:
 # export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
@@ -72,17 +74,18 @@ export COPILOT_TERMINAL_MODE=window   # embed | window
 Внутри сессии при старте показывается баннер (**HACK THE PLANET** / `forced by AI`) и краткая карточка сессии.
 
 - Обычный **русский текст** — мультитёрн диалог; в каждый запрос подмешиваются скоуп, **Todo**, **jobs** (что уже запускалось / в фоне / завершилось), актуальный **context** (hostname, cwd, при SSH — `SSH_CONNECTION`), фрагмент `knowledge/tactics_stub.md`.
-- Блоки **` ```bash` ** → **[1]** здесь (stdout в copilot) · **[2]** окно терминала · **[3]** фон (PID, логи в `sessions/<id>/logs/`) · **[0]** отмена · **[5]** доверить флоу. Для **[3]** перед каждым следующим сообщением к модели выполняется poll: завершённые задачи получают exit-код и хвост лога в контексте. Режим **[2]** по-прежнему не даёт автоматического stdout в транскрипт.
+- Блоки **` ```bash` ** → при нескольких блоках подряд выбираешь номер (**[1]…[n]**, **[0]**, **[a]** все по очереди); затем одно подтверждение **«Запустить здесь?»** (Enter/да — да). Запуск всегда в текущем терминале; режим вывода задаёт **`COPILOT_FG_MODE`**=stream|tty|classic (по умолчанию стрим-превью). Фон, окно ОС и stdin-слот — только при **`trust on`** и переменных **`COPILOT_TRUST_*`** (см. **`help`** в REPL).
 - **`jobs`** — таблица задач сессии; то же самое в сжатом виде уходит в промпт к LLM.
 - **`todo add …`** · **`todo list`** · **`todo done <id>`** — состояние в `~/.pentest-copilot/sessions/<id>/todos.json`.
-- **`trust on`** / **`trust off`** или **`COPILOT_TRUST_FLOW=1`** — без меню (как задано `COPILOT_TERMINAL_MODE`). Для фона в trust-сессии: **`export COPILOT_TRUST_BACKGROUND=1`**.
-- **`scope`** · **`context`** · **`knowledge`** · **`help`** · **`exit`**.
+- **`trust on`** / **`trust off`** или **`COPILOT_TRUST_FLOW=1`** — выполнять предложенные команды без запроса подтверждения; режим окна при **`COPILOT_TERMINAL_MODE=window`** и **`COPILOT_ALLOW_EXTERNAL_TERMINAL=1`**. Для фона в trust-сессии: **`export COPILOT_TRUST_BACKGROUND=1`**; stdin-слот: **`COPILOT_TRUST_STDIN_PIPE=1`**.
+- **`ktools`** — справка по каталогу Kali через MCP ([evilbotnet/kali-mcp](https://github.com/evilbotnet/kali-mcp)): **`pip install '.[kali-tools-mcp]'`**, **`COPILOT_KALI_TOOLS_MCP_CMD`** (JSON argv, часто `docker run --rm -i …`). Подкоманды REPL: `search`, `usage`, `details`, … При **`COPILOT_KALI_TOOLS_LLM=1`** те же пять вызовов доступны модели как **LLM tools** (function calling на OpenRouter — нужна поддерживающая модель); лимит раундов **`COPILOT_KALI_TOOLS_LLM_MAX_ROUNDS`** (по умолчанию 8). Пока задан MCP_CMD, клиент держит **одну долгоживущую stdio-сессию** (переподъём на каждый вызов — **`COPILOT_KALI_TOOLS_ONE_SHOT=1`**). При старте показывается короткое цветное интро (выкл. **`COPILOT_BOOT_INTRO=0`**); частота **`COPILOT_BOOT_INTRO_HZ`**. Журнал вызовов MCP — **`logs/tool_trace.jsonl`** в каталоге сессии; в REPL **`tooltrace`**; подмешивание хвоста в промпт — **`COPILOT_TOOL_TRACE_IN_PROMPT`** (по умолчанию включено). Ожидание MCP при буте: **`COPILOT_KALI_MCP_BOOT_TIMEOUT`** (сек).
+- **`scope`** · **`context`** · **`knowledge`** · **`ktools`** · **`tooltrace`** · **`help`** · **`exit`**.
 
 История: **`~/.pentest-copilot/sessions/<id>/transcript.jsonl`**, учёт команд — **`jobs.json`** рядом.
 
 **SSH:** если ты зашёл по SSH, в блок окружения попадает `SSH_CONNECTION` / при наличии `SSH_TTY` — удобно, когда copilot запущен в той же сессии на сервере.
 
-**Чужие терминалы:** вывод только из **[1]** и хвосты после завершения **[3]**; произвольные другие PTY/tmux — отдельная задача.
+**Чужие терминалы:** вывод из режима stream/classic «здесь» и хвосты логов фона по **`jobs`**; произвольные другие PTY/tmux — отдельная задача.
 
 ## Референс OpenClaw (локально)
 
@@ -97,7 +100,7 @@ export COPILOT_TERMINAL_MODE=window   # embed | window
 |----------|--------------------------------------|
 | `openclaw agent --message "..."` | `copilot chat` — диалог в терминале |
 | Gateway, каналы, daemon | не используем на MVP |
-| Skills / plugins (расширения) | позже: **MCP** + GraphRAG по `knowledge/` |
+| Skills / plugins (расширения) | **ktools** + MCP docs ([kali-mcp](https://github.com/evilbotnet/kali-mcp)); GraphRAG по `knowledge/` |
 | Workspace, модели, OAuth | у нас: **OpenRouter** через env + явный скоуп |
 
 Имеет смысл смотреть OpenClaw как образец **оркестрации агента и политик**, а пентест-специфику держать у нас (скоуп, tactic stub → граф, вызов MCP для команд).
