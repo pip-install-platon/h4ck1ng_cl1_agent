@@ -9,6 +9,12 @@ dependencies = [
     "httpx>=0.27.0",
     "rich>=13.0.0",
     "python-dotenv>=1.0.0",
+    "prompt-toolkit>=3.0.43",
+]
+
+[project.optional-dependencies]
+kali-tools-mcp = [
+    "mcp>=1.4.0",
 ]
 
 [project.scripts]
