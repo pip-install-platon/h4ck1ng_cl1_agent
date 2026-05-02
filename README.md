@@ -1,16 +1,16 @@
 # pentest-copilot-host
 
-Интерактивный **CLI-хост** для пентеста из терминала (в т.ч. Kali): русскоязычный чат с моделью, подстановка контекста (скоуп, методология из `knowledge/`, memory, jobs, tmux), выполнение **`bash`** из ответа модели (по умолчанию **без** запроса **Y/n** — режим trust; отключить см. ниже), опционально **справка по пакетам Kali** и **методология/CVE** через **MCP** (stdio). Без Electron.
+Интерактивный **CLI-хост** для пентеста из терминала (в т.ч. Kali): русскоязычный чат с моделью, подстановка контекста (скоуп, методология из `knowledge/`, memory, jobs, tmux), выполнение **`bash`** из ответа модели (по умолчанию **с** запросом **Y/n** — **`trust off`**; без запросов — **`trust on`** / **`COPILOT_TRUST_FLOW=1`**), опционально **справка по пакетам Kali** и **методология/CVE** через **MCP** (stdio). Без Electron.
 
 ### Дефолты `COPILOT_*`
 
-Большинство опций **включены по умолчанию**: минимальный UI, очередь ввода пока идёт ответ модели, trust-flow, автопоиск `security-framework-mcp` в PATH, LLM-tools Kali/security если MCP доступен, полная методология в промпте (если не задан **`COPILOT_TACTICS_PROMPT_MODE=minimal|auto`**). Чтобы **выключить** фичу, задай **`COPILOT_<ИМЯ>=0`** (или **`false`** / **`no`** / **`off`**). Примеры: **`COPILOT_TRUST_FLOW=0`** — снова спрашивать перед каждым bash; **`COPILOT_PARALLEL_INPUT=0`** — один поток ввода.
+Большинство опций **включены по умолчанию**: минимальный UI, очередь ввода пока идёт ответ модели, автопоиск `security-framework-mcp` в PATH, LLM-tools Kali/security если MCP доступен, полная методология в промпте (если не задан **`COPILOT_TACTICS_PROMPT_MODE=minimal|auto`**). **Trust-flow по умолчанию выключен** — перед каждым bash спрашивается подтверждение; включить без запросов: **`COPILOT_TRUST_FLOW=1`** или **`trust on`**. Чтобы **выключить** другую фичу, задай **`COPILOT_<ИМЯ>=0`** (или **`false`** / **`no`** / **`off`**). Примеры: **`COPILOT_PARALLEL_INPUT=0`** — один поток ввода.
 
 ## Что внутри
 
 | Часть | Роль |
 |-------|------|
-| **REPL** | Ввод текста → запрос к LLM; блоки `bash` → запуск (по умолчанию без **Y/n**, см. **`COPILOT_TRUST_FLOW`**) (`task`, `trust`, `manual`, …). |
+| **REPL** | Ввод текста → запрос к LLM; блоки `bash` → подтверждение **Y/n** по умолчанию (**`COPILOT_TRUST_FLOW`**, **`trust on`**/`off`) (`task`, `trust`, `manual`, …). |
 | **Скоуп** | `PENTEST_SCOPE_*` и команды `target` / `policy` → текст в каждый пользовательский промпт (не ACL и не sandbox). |
 | **Методология** | Файл `knowledge/tactics_stub.md` или `COPILOT_KNOWLEDGE_PATH`; команда `knowledge` показывает полный фрагмент. |
 | **Файл скана** | `COPILOT_SCOPE_FACTS_FILE` — подстановка в промпт сводки + эвристический разбор IP / строк портов / фрагментов OS (см. ниже). |
@@ -151,7 +151,7 @@ chmod +x scripts/copilot-up.sh
 | `COPILOT_TRUST_FG` | Режим fg для trust, если `FG_MODE` пуст |
 | `COPILOT_TRUST_BACKGROUND` | Фоновые процессы в trust |
 | `COPILOT_TRUST_STDIN_PIPE` | stdin-слот для фона в trust |
-| `COPILOT_TRUST_FLOW` | По умолчанию **включён** — запуск bash без **Y/n**. Выключить: **`COPILOT_TRUST_FLOW=0`** или **`trust off`** в REPL. |
+| `COPILOT_TRUST_FLOW` | По умолчанию **выключен** — перед каждым bash запрашивается **Y/n**. Включить без запросов: **`COPILOT_TRUST_FLOW=1`** или **`trust on`** в REPL. |
 | `COPILOT_TERMINAL_EMULATOR` | Внешний эмулятор терминала (spawn) |
 | `COPILOT_CMD_TIMEOUT` | Таймаут команд (сек) |
 | `COPILOT_MSF_AUTO_TTY` | **1** (по умолчанию): интерактивный `msfconsole` без `-x`/`-r` автоматически в **TTY** (живой stdin/out), иначе стрим с `stdin=DEVNULL` даёт `stty` и консоль «закрывается». **0** — не подменять режим. |
@@ -315,8 +315,8 @@ pip install git+https://github.com/zer0-kr/security-framework-mcp.git
 
 ## Поведение в REPL (кратко)
 
-- Текст на русском → ответ модели; блоки **` ```bash` **` → подтверждение и запуск через хост.
-- **`trust on`** — без запросов на bash (осторожно).
+- Текст на русском → ответ модели; блоки **` ```bash` **` → подтверждение и запуск через хост (по умолчанию **Y/n**).
+- **`trust on`** — без запросов на bash (**осторожно**); по умолчанию **`trust off`**.
 - **`help`** — пользовательская справка (команды и примеры **без** списка env).
 - Переменные окружения, Docker MCP и режимы вывода — в таблицах **выше в этом README** и в **`.env.example`**.
 - **`task …`**, **`manual …`**, **`scope`**, **`context`**, **`ktools`**, **`tooltrace`**, **`exit`** и др. — таблица внутри **`help`** в REPL.
