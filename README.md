@@ -1,17 +1,21 @@
 # pentest-copilot-host
 
-Интерактивный **CLI-хост** для пентеста из терминала (в т.ч. Kali): русскоязычный чат с моделью, подстановка контекста (скоуп, методология из `knowledge/`, memory, jobs, tmux), выполнение предложенных **`bash`** только после подтверждения (или в режиме trust), опционально **справка по пакетам Kali** и **методология/CVE** через **MCP** (stdio). Без Electron.
+Интерактивный **CLI-хост** для пентеста из терминала (в т.ч. Kali): русскоязычный чат с моделью, подстановка контекста (скоуп, методология из `knowledge/`, memory, jobs, tmux), выполнение **`bash`** из ответа модели (по умолчанию **без** запроса **Y/n** — режим trust; отключить см. ниже), опционально **справка по пакетам Kali** и **методология/CVE** через **MCP** (stdio). Без Electron.
+
+### Дефолты `COPILOT_*`
+
+Большинство опций **включены по умолчанию**: минимальный UI, очередь ввода пока идёт ответ модели, trust-flow, автопоиск `security-framework-mcp` в PATH, LLM-tools Kali/security если MCP доступен, полная методология в промпте (если не задан **`COPILOT_TACTICS_PROMPT_MODE=minimal|auto`**). Чтобы **выключить** фичу, задай **`COPILOT_<ИМЯ>=0`** (или **`false`** / **`no`** / **`off`**). Примеры: **`COPILOT_TRUST_FLOW=0`** — снова спрашивать перед каждым bash; **`COPILOT_PARALLEL_INPUT=0`** — один поток ввода.
 
 ## Что внутри
 
 | Часть | Роль |
 |-------|------|
-| **REPL** | Ввод текста → запрос к LLM; блоки `bash` → подтверждение и запуск через хост (`task`, `trust`, `manual`, …). |
+| **REPL** | Ввод текста → запрос к LLM; блоки `bash` → запуск (по умолчанию без **Y/n**, см. **`COPILOT_TRUST_FLOW`**) (`task`, `trust`, `manual`, …). |
 | **Скоуп** | `PENTEST_SCOPE_*` и команды `target` / `policy` → текст в каждый пользовательский промпт (не ACL и не sandbox). |
 | **Методология** | Файл `knowledge/tactics_stub.md` или `COPILOT_KNOWLEDGE_PATH`; команда `knowledge` показывает полный фрагмент. |
 | **Файл скана** | `COPILOT_SCOPE_FACTS_FILE` — подстановка в промпт сводки + эвристический разбор IP / строк портов / фрагментов OS (см. ниже). |
-| **MCP Kali** | Документация инструментов Kali (`ktools` в REPL; при `COPILOT_KALI_TOOLS_LLM=1` — как LLM tools). |
-| **MCP security-framework** | При `COPILOT_SECURITY_FRAMEWORK_LLM=1` — OWASP/WSTG/CVE/CWE и др. (whitelist tools). |
+| **MCP Kali** | Документация инструментов Kali (`ktools` в REPL; как LLM tools при настроенном MCP — по умолчанию вкл., выкл. **`COPILOT_KALI_TOOLS_LLM=0`**). |
+| **MCP security-framework** | OWASP/WSTG/CVE/CWE и др. через LLM tools при доступном MCP — по умолчанию вкл., выкл. **`COPILOT_SECURITY_FRAMEWORK_LLM=0`**; автопоиск бинаря в PATH — **`COPILOT_SECURITY_MCP_AUTO=0`**. |
 | **Артефакты** | Каталог сессии `~/.pentest-copilot/sessions/<id>/`: транскрипт, todo, jobs, `tool_trace.jsonl`, scope. |
 
 Подмодули исходников: **`pentest_copilot.mcp`** (stdio MCP Kali и security-framework, журнал вызовов tools), **`pentest_copilot.repl`** (рамка ввода, многострочный композер, меню выбора bash-блоков); в корне пакета — оркестрация (`host`), сессия, runner, контекст и т.д.
@@ -120,7 +124,7 @@ chmod +x scripts/copilot-up.sh
 |------------|------------|
 | `COPILOT_KNOWLEDGE_PATH` | Свой markdown вместо `knowledge/tactics_stub.md` |
 | `COPILOT_TACTICS_MAX` | Лимит символов при загрузке stub в память (дефолт **12000**) |
-| `COPILOT_TACTICS_PROMPT_MODE` | `full` \| `minimal` — объём методологии в user-блоке; при security-LLM без режима по умолчанию короче |
+| `COPILOT_TACTICS_PROMPT_MODE` | `full` \| `minimal` \| `auto` — объём методологии в user-блоке. **По умолчанию** (пусто) подставляется **полный** фрагмент из файла; **`minimal`** — короткая заготовка; **`auto`** — короткая только если включён security-framework LLM. |
 
 ### Транскрипт и LLM-история
 
@@ -147,9 +151,10 @@ chmod +x scripts/copilot-up.sh
 | `COPILOT_TRUST_FG` | Режим fg для trust, если `FG_MODE` пуст |
 | `COPILOT_TRUST_BACKGROUND` | Фоновые процессы в trust |
 | `COPILOT_TRUST_STDIN_PIPE` | stdin-слот для фона в trust |
-| `COPILOT_TRUST_FLOW` | Старт с trust как после `trust on` |
+| `COPILOT_TRUST_FLOW` | По умолчанию **включён** — запуск bash без **Y/n**. Выключить: **`COPILOT_TRUST_FLOW=0`** или **`trust off`** в REPL. |
 | `COPILOT_TERMINAL_EMULATOR` | Внешний эмулятор терминала (spawn) |
 | `COPILOT_CMD_TIMEOUT` | Таймаут команд (сек) |
+| `COPILOT_MSF_AUTO_TTY` | **1** (по умолчанию): интерактивный `msfconsole` без `-x`/`-r` автоматически в **TTY** (живой stdin/out), иначе стрим с `stdin=DEVNULL` даёт `stty` и консоль «закрывается». **0** — не подменять режим. |
 
 ### Стрим и превью
 
@@ -182,6 +187,8 @@ chmod +x scripts/copilot-up.sh
 
 | Переменная | Назначение |
 |------------|------------|
+| `COPILOT_UI_MINIMAL` | По умолчанию **вкл.** — интерфейс «как Cursor CLI». Выключить: **`COPILOT_UI_MINIMAL=0`**. Дополнительно можно **`COPILOT_INPUT_BOX=0`** и **`COPILOT_STICKY_BANNER=0`**. |
+| `COPILOT_PARALLEL_INPUT` | По умолчанию **вкл.** — очередь сообщений к модели; **`COPILOT_PARALLEL_INPUT=0`** — выключить. |
 | `COPILOT_MENU_HOTKEYS` | Горячие клавиши выбора bash-блока |
 | `COPILOT_STICKY_BANNER` | Липкий баннер |
 | `COPILOT_STICKY_TAIL` | Хвост строк в липком режиме |
@@ -216,16 +223,16 @@ chmod +x scripts/copilot-up.sh
 | `COPILOT_KALI_TOOLS_ONE_SHOT` | Новый subprocess на каждый вызов |
 | `COPILOT_KALI_MCP_BOOT_TIMEOUT` | Ожидание при старте |
 | `COPILOT_KALI_MCP_PING_TIMEOUT` | Таймаут `list_tools` при boot |
-| `COPILOT_KALI_TOOLS_LLM` | Включить Kali tools как LLM function calling |
+| `COPILOT_KALI_TOOLS_LLM` | Включить Kali tools как LLM function calling (**по умолчанию вкл.** при доступном MCP stdio; выкл. **`0`**) |
 | `COPILOT_KALI_TOOLS_LLM_MAX_ROUNDS` | Лимит раундов tool_calls (если нет `COPILOT_LLM_TOOL_ROUNDS`) |
 
 ### MCP security-framework
 
 | Переменная | Назначение |
 |------------|------------|
-| `COPILOT_SECURITY_FRAMEWORK_LLM` | Подмешать security tools |
+| `COPILOT_SECURITY_FRAMEWORK_LLM` | Подмешать security tools (**по умолчанию вкл.** при доступном MCP; выкл. **`0`**) |
 | `COPILOT_SECURITY_FRAMEWORK_MCP_CMD` | JSON argv stdio |
-| `COPILOT_SECURITY_MCP_AUTO` | Искать `security-framework-mcp` в PATH (дефолт выкл.) |
+| `COPILOT_SECURITY_MCP_AUTO` | По умолчанию **вкл.** — искать `security-framework-mcp` в **PATH**. Выключить: **`0`**. |
 | `COPILOT_SECURITY_TOOLS_ALLOWLIST` | Имена через запятую |
 | `COPILOT_SECURITY_MCP_BOOT_TIMEOUT` | Boot-intro |
 | `COPILOT_SECURITY_MCP_PING_TIMEOUT` | Ping/list при старте |
@@ -278,7 +285,7 @@ docker build -t kali-tools-mcp-server:latest https://github.com/evilbotnet/kali-
 pip install git+https://github.com/zer0-kr/security-framework-mcp.git
 ```
 
-При старте Kali и security MCP поднимаются **параллельно**. Полный текст методологии при включённом security-LLM по умолчанию короче в промпте; полный файл — **`knowledge`** (`COPILOT_TACTICS_PROMPT_MODE=full|minimal`).
+При старте Kali и security MCP поднимаются **параллельно**. Объём методологии в промпте задаёт **`COPILOT_TACTICS_PROMPT_MODE`** (`full` / `minimal` / `auto`); по умолчанию подставляется **полный** текст из **`knowledge`** — см. команду **`knowledge`** в REPL.
 
 #### Риски
 
