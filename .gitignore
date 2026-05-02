@@ -7,3 +7,6 @@ venv/
 dist/
 build/
 openclaw-main/
+
+# Локальные моки / черновики разработки
+mock/

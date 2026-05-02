@@ -38,7 +38,8 @@ usage() {
   -h, --help          справка
 
 Переменные окружения:
-  COPILOT_UP_NO_PULL=1   не делать git pull
+  COPILOT_UP_NO_PULL=1             не делать git pull
+  COPILOT_UP_SKIP_PIP_UPGRADE=1   не обновлять pip/setuptools (офлайн)
 
 Все прочие аргументы передаются в copilot (например --dry-run, doctor).
 EOF
@@ -98,8 +99,12 @@ if [[ ! -d "${VENV}" ]]; then
   python3 -m venv "${VENV}"
 fi
 
-echo "[copilot-up] обновление pip…"
-"${PIP}" install -q -U pip setuptools wheel
+if [[ "${COPILOT_UP_SKIP_PIP_UPGRADE:-}" =~ ^(1|true|yes)$ ]]; then
+  echo "[copilot-up] пропуск обновления pip/setuptools (offline / COPILOT_UP_SKIP_PIP_UPGRADE=1)"
+else
+  echo "[copilot-up] обновление pip…"
+  "${PIP}" install -q -U pip setuptools wheel || echo "[copilot-up] предупреждение: pip upgrade не удался (сеть/PyPI?) — пробуем pip install -e"
+fi
 
 if [[ "${INSTALL_MCP}" == "1" ]]; then
   echo "[copilot-up] pip install -e '.[kali-tools-mcp]'…"

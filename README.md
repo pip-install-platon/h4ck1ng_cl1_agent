@@ -14,6 +14,8 @@
 | **MCP security-framework** | При `COPILOT_SECURITY_FRAMEWORK_LLM=1` — OWASP/WSTG/CVE/CWE и др. (whitelist tools). |
 | **Артефакты** | Каталог сессии `~/.pentest-copilot/sessions/<id>/`: транскрипт, todo, jobs, `tool_trace.jsonl`, scope. |
 
+Подмодули исходников: **`pentest_copilot.mcp`** (stdio MCP Kali и security-framework, журнал вызовов tools), **`pentest_copilot.repl`** (рамка ввода, многострочный композер, меню выбора bash-блоков); в корне пакета — оркестрация (`host`), сессия, runner, контекст и т.д.
+
 Несколько хостов в одном задании: поле **target** — одна строка произвольного текста; можно перечислить несколько IP/CIDR/имён через запятую или с переносами. Для тяжёлого вывода сканера удобнее **файл** (`COPILOT_SCOPE_FACTS_FILE`): там и сырой хвост, и авто-выжимка портов/OS.
 
 ## Требования
@@ -109,7 +111,8 @@ chmod +x scripts/copilot-up.sh
 |------------|------------|
 | `OPENROUTER_API_KEY` | Токен Bearer для выбранного API |
 | `OPENROUTER_BASE_URL` | База URL (**без** `/chat/completions` — суффикс добавляется кодом) |
-| `OPENROUTER_MODEL` | Имя модели для провайдера |
+| `OPENROUTER_MODEL` | Основная модель: диалог пентеста, tool calls, генерация команд в ответах |
+| `COPILOT_COMMAND_MODEL` | Необязательно: **вторая** модель только для «командной» вспомогательной работы (резюме вывода после запуска, переформулировка после ошибки). Пусто — везде используется **`OPENROUTER_MODEL`**. Чат и tools остаются на основной модели. |
 
 ### Методология и промпт
 
@@ -155,7 +158,21 @@ chmod +x scripts/copilot-up.sh
 | `COPILOT_STREAM_MODE` | `chunk` \| `line` |
 | `COPILOT_STREAM_CHUNK_BYTES` | Размер чанка |
 | `COPILOT_STREAM_REFRESH_HZ` | Частота обновления |
-| `COPILOT_STREAM_PREVIEW_LINES` | Строк превью |
+| `COPILOT_STREAM_PREVIEW_LINES` | Строк превью после команды (дефолт **12**) |
+| `COPILOT_STREAM_CHUNK_LINE_TAIL` | В режиме **chunk**: минимум последних строк (дефолт **20**) |
+| `COPILOT_STREAM_CHUNK_PREVIEW_CHARS` | При «мало строк» — хвост буфера до N символов (дефолт **8000**) |
+| `COPILOT_STREAM_PREVIEW_MIN_CHARS` | Порог для переключения на хвост по символам |
+| `COPILOT_STREAM_HEARTBEAT` | **1** — подпись со спиннером и метриками даже без новых строк (ощущение «живого» процесса) |
+| `COPILOT_STREAM_TICK_SEC` | Пауза ожидания чанка/строки для опроса очереди и обновления пульса (сек, по умолчанию **0.12**) |
+| `COPILOT_POST_RUN_LLM_DIGEST` | После **stream**/**classic**: **auto** (пусто) — резюме через LLM если задан API-ключ; **0** — выкл.; **1** — принудительно |
+| `COPILOT_POST_RUN_LLM_DIGEST_TIMEOUT` | Таймаут запроса резюме (сек) |
+| `COPILOT_POST_RUN_LLM_DIGEST_MAX_CHARS` | Максимум символов stdout в промпт резюме |
+| `COPILOT_POST_RUN_LLM_DIGEST_MIN_CHARS` | Не вызывать LLM если суммарный вывод короче N символов |
+| `COPILOT_CMD_RETRY_ON_FAIL` | **1** — при ненулевом exit (stream/classic) запросить у LLM альтернативную команду в блоке bash и второе подтверждение; **0** — выкл. |
+| `COPILOT_CMD_RETRY_MAX` | Сколько **дополнительных** запусков после первой неудачи (0…8, по умолчанию **1**, итого до 2 попыток) |
+| `COPILOT_CMD_RETRY_LLM_TIMEOUT` | Таймаут запроса переформулировки (сек) |
+| `COPILOT_CMD_RETRY_LLM_MAX_CHARS` | Лимит stdout в промпт для retry-LLM |
+| `COPILOT_STRIP_ANSI_PREVIEW` | **1** — убрать ANSI из превью (msf/nmap) |
 | `COPILOT_BG_PREVIEW` | Превью stdout фона |
 | `COPILOT_BG_PREVIEW_LINES` | Строк превью фона |
 | `COPILOT_BG_PREVIEW_BYTES` | Байт чтения хвоста лога |
@@ -170,8 +187,9 @@ chmod +x scripts/copilot-up.sh
 | `COPILOT_STICKY_TAIL` | Хвост строк в липком режиме |
 | `COPILOT_STICKY_CLEAR` | Очистка перед промптом |
 | `COPILOT_SCROLLBACK_LINES` | Размер скроллбека |
-
-### tmux
+| `COPILOT_INPUT_BOX` | **1** — рамка вокруг строки ввода (стиль Cursor CLI); **0** — только «›» |
+| `COPILOT_INPUT_BOX_TITLE` | Заголовок верхней границы рамки (по умолчанию **You**) |
+| `COPILOT_INPUT_MULTILINE` | **1** — многострочный композер: **Enter** = отправка; **Shift+Enter** = новая строка там, где терминал отсылает CSI modify-keys (иначе как обычный Enter — см. **Ctrl+O** / **F8**); **F9** — запасная отправка. **0** — однострочный ввод. |
 
 | Переменная | Назначение |
 |------------|------------|
@@ -227,7 +245,10 @@ chmod +x scripts/copilot-up.sh
 | Переменная | Назначение |
 |------------|------------|
 | `COPILOT_BOOT_INTRO` | Цветное интро при старте (**0** — выкл.) |
+| `COPILOT_BOOT_INTRO_MIN_SEC` | Минимум секунд показа интро после MCP (дефолт **1**) |
 | `COPILOT_BOOT_INTRO_HZ` | Частота кадров интро |
+| `COPILOT_PREFLIGHT_SKIP_PIP_UPGRADE` | **1** — не обновлять pip/setuptools из лаунчера (офлайн) |
+| `COPILOT_PREFLIGHT_PIP_TIMEOUT` | Таймаут pip upgrade (сек) |
 | `COPILOT_PREFLIGHT_NO_MCP` | Preflight без MCP extra |
 | `PENTEST_COPILOT_ROOT` | Корень проекта для preflight |
 
@@ -247,7 +268,7 @@ docker build -t kali-tools-mcp-server:latest https://github.com/evilbotnet/kali-
 
 При ошибке платформы — сборка из клона репозитория или **`COPILOT_KALI_MCP_DOCKER_PLATFORM`**.
 
-Поведение по умолчанию: **`COPILOT_KALI_MCP_AUTO=1`** собирает `docker run …` (**`COPILOT_KALI_MCP_DOCKER_IMAGE`**). Своя команда stdio: **`COPILOT_KALI_TOOLS_MCP_CMD`** (JSON argv). Подробнее — **`help`** в REPL.
+Поведение по умолчанию: **`COPILOT_KALI_MCP_AUTO=1`** собирает `docker run …` (**`COPILOT_KALI_MCP_DOCKER_IMAGE`**). Своя команда stdio: **`COPILOT_KALI_TOOLS_MCP_CMD`** (JSON argv). Детали — этот раздел README и **`ktools`** в REPL.
 
 ### Опционально: security-framework-mcp (LLM tools)
 
@@ -289,9 +310,22 @@ pip install git+https://github.com/zer0-kr/security-framework-mcp.git
 
 - Текст на русском → ответ модели; блоки **` ```bash` **` → подтверждение и запуск через хост.
 - **`trust on`** — без запросов на bash (осторожно).
-- **`task …`**, **`manual …`**, **`scope`**, **`context`**, **`ktools`**, **`tooltrace`**, **`help`**, **`exit`** — см. **`help`**.
+- **`help`** — пользовательская справка (команды и примеры **без** списка env).
+- Переменные окружения, Docker MCP и режимы вывода — в таблицах **выше в этом README** и в **`.env.example`**.
+- **`task …`**, **`manual …`**, **`scope`**, **`context`**, **`ktools`**, **`tooltrace`**, **`exit`** и др. — таблица внутри **`help`** в REPL.
 
 Флаги CLI: **`copilot chat --dry-run`**, **`--terminal-window`** (внешнее окно для команд при Linux).
+
+## Частые проблемы
+
+| Симптом | Что сделать |
+|---------|-------------|
+| **PyPI таймаут / setuptools** | Экспорт зеркала или офлайн-кэш pip; **`COPILOT_UP_SKIP_PIP_UPGRADE=1 ./scripts/copilot-up.sh`**; для лаунчера **`COPILOT_PREFLIGHT_SKIP_PIP_UPGRADE=1`**; на Kali часто помогает **`sudo apt install python3-setuptools python3-pip`** до `pip install -e`. |
+| **Интро не видно** | По умолчанию панель короткая и **`transient`**; выставь **`COPILOT_BOOT_INTRO_MIN_SEC=1.5`**. Явно выключено: **`COPILOT_BOOT_INTRO=0`**. |
+| **Стрим «только начало и конец»** | Увеличь **`COPILOT_STREAM_PREVIEW_LINES`** (дефолт теперь **12**); для режима chunk — **`COPILOT_STREAM_CHUNK_LINE_TAIL`** (сколько последних строк держать), **`COPILOT_STREAM_CHUNK_PREVIEW_CHARS`**; **`COPILOT_STRIP_ANSI_PREVIEW=1`** убирает мусорные ESC-последовательности из msf/nmap. |
+| **Пути без ~/** | В баннере и блоке «Окружение» cwd и каталог сессии показываются как **`~/...`**, если путь внутри HOME. |
+| **Shift+Enter в композере = обычный Enter** | В классическом conhost Shift+Enter часто не отличить от Enter. Новая строка: **Ctrl+O** или **F8**; удобнее **Windows Terminal** / встроенный терминал редактора. |
+| **Metasploit ломается в однострочнике** | Это не запрет на работу: делай **пошагово** и держи чеклист в **`todo add …`**. Варианты: **`COPILOT_FG_MODE=tty`** + один запуск **`msfconsole`** (живая консоль в том же терминале — как «вложенное окно» без отдельного GUI); или много коротких **`msfconsole -q -x "…; exit"`** с подтверждением **каждого** bash-блока; опасный **`run`/`exploit`** или большой **`-r`** — только отдельным шагом после **`search`/`info`/`options`** на твоей версии MSF. |
 
 ## Отличие от OpenClaw
 
