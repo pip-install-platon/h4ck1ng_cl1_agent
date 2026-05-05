@@ -1,0 +1,20 @@
+{
+  "name": "@pentest-copilot/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js demo",
+    "start:session": "node dist/main.js session",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@pentest-copilot/core": "*",
+    "@pentest-copilot/terminal": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}

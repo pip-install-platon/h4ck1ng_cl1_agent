@@ -1,0 +1,16 @@
+{
+  "engagementId": "demo-mormew3y",
+  "createdAt": "2026-05-04T19:56:59.866Z",
+  "summaryBullets": [
+    "nodes=4",
+    "edges=1",
+    "lastUpdated=2026-05-04T19:56:59.863Z"
+  ],
+  "modulesTouched": [
+    "ig",
+    "vuln",
+    "exploit",
+    "report"
+  ],
+  "graphSnapshotPath": "data\\engagements\\demo-mormew3y\\graph.json"
+}

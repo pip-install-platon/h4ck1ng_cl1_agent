@@ -1,0 +1,16 @@
+{
+  "engagementId": "demo-mormfoc6",
+  "createdAt": "2026-05-04T19:57:36.111Z",
+  "summaryBullets": [
+    "nodes=4",
+    "edges=1",
+    "lastUpdated=2026-05-04T19:57:36.109Z"
+  ],
+  "modulesTouched": [
+    "ig",
+    "vuln",
+    "exploit",
+    "report"
+  ],
+  "graphSnapshotPath": "..\\data\\engagements\\demo-mormfoc6\\graph.json"
+}

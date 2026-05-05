@@ -1,0 +1,59 @@
+{
+  "engagementId": "demo-mormfoc6",
+  "nodes": {
+    "host-10.10.10.10": {
+      "id": "host-10.10.10.10",
+      "type": "host",
+      "lane": "ig",
+      "label": "10.10.10.10",
+      "data": {
+        "address": "10.10.10.10",
+        "source": "demo-ig"
+      }
+    },
+    "svc-10.10.10.10-demo": {
+      "id": "svc-10.10.10.10-demo",
+      "type": "service",
+      "lane": "vuln",
+      "label": "placeholder service 10.10.10.10",
+      "data": {
+        "port": 443,
+        "proto": "tcp",
+        "note": "demo"
+      }
+    },
+    "vuln-10.10.10.10-demo": {
+      "id": "vuln-10.10.10.10-demo",
+      "type": "vulnerability",
+      "lane": "exploit",
+      "label": "Demo finding — replace with evidence-backed id",
+      "data": {
+        "severity": "unknown"
+      }
+    },
+    "report-demo-mormfoc6": {
+      "id": "report-demo-mormfoc6",
+      "type": "engagement_report",
+      "lane": "report",
+      "label": "Report demo-mormfoc6",
+      "data": {
+        "ready": true
+      }
+    }
+  },
+  "edges": [
+    {
+      "id": "e-10.10.10.10-host-svc",
+      "fromId": "host-10.10.10.10",
+      "toId": "svc-10.10.10.10-demo",
+      "label": "exposes"
+    }
+  ],
+  "taskStatuses": {
+    "e88d9670-8035-4819-9221-010cd41bd5fa": "completed",
+    "56fddd6b-9c5b-4284-9aee-321108fcc644": "completed",
+    "07d6ff5f-c157-4fa5-9451-56a4dd00ee7d": "completed",
+    "a73a0749-0174-41b7-bcf4-f8475040ad56": "completed"
+  },
+  "updatedAt": "2026-05-04T19:57:36.109Z"
+}

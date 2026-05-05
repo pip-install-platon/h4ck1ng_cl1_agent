@@ -1,0 +1,21 @@
+{
+  "name": "pentest-copilot",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @pentest-copilot/contracts && npm run build -w @pentest-copilot/skills && npm run build -w @pentest-copilot/terminal && npm run build -w @pentest-copilot/core && npm run build -w @pentest-copilot/cli",
+    "test": "npm run test -w @pentest-copilot/contracts && npm run test -w @pentest-copilot/terminal && npm run test -w @pentest-copilot/core",
+    "lint": "npm run lint -w @pentest-copilot/contracts && npm run lint -w @pentest-copilot/terminal && npm run lint -w @pentest-copilot/skills && npm run lint -w @pentest-copilot/core && npm run lint -w @pentest-copilot/cli",
+    "cli": "npm run start -w @pentest-copilot/cli",
+    "cli:session": "npm run start:session -w @pentest-copilot/cli"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "eslint": "^9.22.0",
+    "typescript-eslint": "^8.26.0",
+    "typescript": "^5.8.2"
+  }
+}
